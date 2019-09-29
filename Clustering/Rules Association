@@ -1,3 +1,8 @@
+#discretize features based on information gain
+disc_avg = optbin(avg, method = "infogain")
+disc_first = optbin(first, method = "infogain")
+disc_last = optbin(last, method = "infogain")
+
 
 #create class-association rules
 
