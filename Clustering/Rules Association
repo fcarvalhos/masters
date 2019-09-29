@@ -1,0 +1,58 @@
+
+#create class-association rules
+
+grades_rules_avg.sub<- subset(rules_avg, subset = rhs %pin% "grades")
+grades_rules_first.sub<- subset(rules_first, subset = rhs %pin% "grades")
+grades_rules_last.sub<- subset(rules_last, subset = rhs %pin% "grades")
+
+#sort rules by confidence/support/lift
+sort_avg_rules_conf <- sort(grades_rules_avg.sub, by="confidence", decreasing = TRUE)
+sort_first_rules_conf <- sort(grades_rules_first.sub, by="confidence", decreasing = TRUE)
+sort_last_rules_conf <- sort(grades_rules_last.sub, by="confidence", decreasing = TRUE)
+
+
+#write rules of each dataset on .csv files
+
+last_rules<-DATAFRAME(sort_last_rules_conf, separate = TRUE)
+first_rules<-DATAFRAME(sort_first_rules_conf, separate = TRUE)
+avg_rules<-DATAFRAME(sort_avg_rules_conf, separate = TRUE)
+
+write.csv(avg_rules, file = "mypath\\grade_class_rules_avg.csv",row.names=FALSE)
+write.csv(first_rules, file = "mypath\\grade_class_rules_first.csv", row.names=FALSE)
+write.csv(last_rules, file = "mypatha\\grade_class_rules_last.csv", row.names=FALSE)
+
+
+#############################################
+#create association rules using on submissions numbers as example
+
+sub_rules_avg.sub<- subset(rules_avg, subset = rhs %pin% "submissions")
+sub_rules_first.sub<- subset(rules_first, subset = rhs %pin% "submissions")
+sub_rules_last.sub<- subset(rules_last, subset = rhs %pin% "submissions")
+
+sort_avg_rules_conf <- sort(sub_rules_avg.sub, by="confidence", decreasing = TRUE)
+sort_first_rules_conf <- sort(sub_rules_first.sub, by="confidence", decreasing = TRUE)
+sort_last_rules_conf <- sort(sub_rules_last.sub, by="confidence", decreasing = TRUE)
+
+last_rules<-DATAFRAME(sort_last_rules_conf, separate = TRUE)
+first_rules<-DATAFRAME(sort_first_rules_conf, separate = TRUE)
+avg_rules<-DATAFRAME(sort_avg_rules_conf, separate = TRUE)
+
+write.csv(avg_rules, file = "mypath\\sub_class_rules_avg.csv",row.names=FALSE)
+write.csv(first_rules, file = "mypath\\sub_class_rules_first.csv", row.names=FALSE)
+write.csv(last_rules, file = "mypath\\sub_class_rules_last.csv", row.names=FALSE)
+
+
+
+###############################################
+#create subset of rules
+
+subsetRules_last<- which(colSums(is.subset(grades_rules_last.sub,grades_rules_last.sub))>1)
+last_rules_no_redundancies<-grades_rules_last.sub[-subsetRules_last]
+
+
+#plot item frequency
+itemFrequencyPlot(trans_avg, type="absolute", support = 0.75, main="feature frequency")
+
+#plot rules graph
+top10rules <- head(sort_avg_rules_conf, n =10, by="confidence")
+plot(top10rules, method = "graph", engine = "htmlwidget")
