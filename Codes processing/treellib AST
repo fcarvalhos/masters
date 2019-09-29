@@ -1,0 +1,430 @@
+from __future__ import print_function
+import os
+import statistics
+import sys
+import ast
+import traceback
+import numpy
+
+import pydot
+from treelib import Tree, Node
+import csv
+from pycparser import parse_file, c_parser, c_generator
+import pycparser.c_ast as pyc_ast
+from collections import Counter
+
+sys.path.extend(['.', '..'])
+
+class my_id(object):
+    def __init__(self, value):
+        self.value = value
+
+
+class my_FileAST(pyc_ast.FileAST):
+    # __slots__ = ('ext', 'coord', '__weakref__')
+    def __init__(self):
+        pass
+        # self.ext = ext
+        # self.coord = coord
+        # self.parent = None
+
+    def copy(self, fileAST):
+        self.coord = fileAST.coord
+        self.ext = fileAST.ext
+        self.parent = None
+
+
+def create_graph(file_source):
+    ast = parse_file(file_source, use_cpp=True)
+    tree = Tree()
+    id = my_id('0')
+    ast_walkV2(ast, tree, id)
+    return tree
+
+
+# gera um nó para cada atributo e para os filhos
+def ast_walk(ast, tree, id, fatherID=None):
+    tree.create_node(identifier=id.value, parent=fatherID, tag=ast.__class__.__name__)
+    actualID = id.value
+    i = 0
+    id.value = str(actualID) + "." + str(i)
+
+    for attr in ast.attr_names:
+        attr_var = str(attr)
+        getattr_var = str(getattr(ast, attr))
+        tree.create_node(identifier=id.value, parent=actualID, tag=attr_var + " : " + getattr_var)
+        i += 1
+        id.value = str(actualID) + "." + str(i)
+
+    for n, cnode in ast.children():
+        ast_walk(cnode, tree, id, actualID)
+
+
+# os atributos estao dentro da descricao de cada noh criado
+def ast_walkV2(ast, tree, id, fatherID=None):
+    actualID = id.value
+    i = 0
+
+    atributesDesc = ast.__class__.__name__ + ">>"
+    for attr in ast.attr_names:
+        attr_var = str(attr)
+        getattr_var = str(getattr(ast, attr))
+        atributesDesc += " " + attr_var + " = " + getattr_var + " "
+
+    tree.create_node(identifier=id.value, parent=fatherID, tag=atributesDesc)
+
+    for n, cnode in ast.children():
+        id.value = str(actualID) + "." + str(i)
+        i += 1
+        ast_walkV2(cnode, tree, id, actualID)
+
+
+def tree_stats(tree, userID, sub_number, IDsub=None):
+    tree_loops = 0
+    tree_ifs = 0
+
+    # altura da arvore
+    tree_height = tree.depth()
+    # leaves retorna um vetor com todas as folhas de uma arvore
+    tree_leaves = tree.leaves()
+    # retorna o tamanho do vetor de folhas, no caso a largura da arvore
+    tree_width = len(tree_leaves)
+
+    # retorna o tamanho da arvore
+    tree_size = tree.size()
+    tree_level = 0
+    tree_degree = 0.0
+    #data_ref eh referente a referencias e/ou manipulacoes de dados (BinaryOp, ArrayRef, ID, Constant)
+    data_ref = 0
+
+    #func_decl eh referencte a declaracoes feitas no codigo do aluno (ArrayDecl, FuncDecl, PtrDecl)
+    func_decl = 0
+
+    for n in tree.all_nodes():
+        if tree.contains(n._identifier):
+            # retorna o numero médio de arestas do no, Level que é igual ao numero de filhos + 1
+            tree_level += tree.level(n._identifier) / len(tree.all_nodes())
+
+            # retorna o grau medio dos nos (numero medio de filhos dos nos de uma arvore)
+            tree_degree += len(tree.children(n._identifier)) / len(tree.all_nodes())
+
+            # retorna o número de tokens relacionados a funcoes de laco usadas no código
+            if ((n._tag.__contains__("For>>")) or (n.tag.__contains__("While>>")) or (n.tag.__contains__("Dowhile>>"))):
+                tree_loops += 1
+
+            # retorna o numero tokens relacionados a funcoes condicionais usadas no codigo
+            if ((n._tag.__contains__("If>>")) or (n._tag.__contains__("Switch>>")) or (n._tag.__contains__("Case>>"))):
+                tree_ifs += 1
+
+            # retorna o numero de  tokens relacionados a manipulacao de dados e referencia usadas no codigo
+            if ((n._tag.__contains__("BinaryOp")) or (n._tag.__contains__("ArrayRef")) or (n._tag.__contains__("ID")) or (n._tag.__contains__("Constant"))):
+                data_ref += 1
+            # retorna o numero de  tokens relacionados a declaracao de funcoes usadas no codigo
+            if ((n._tag.__contains__("ArrayDecl")) or (n._tag.__contains__("FuncDecl")) or (n._tag.__contains__("PtrDecl"))):
+                func_decl +=1
+
+    if(IDsub == None):
+        stats = [int(userID), float(tree_height), float(tree_width), float(tree_size), float(tree_level),
+                 float(tree_degree), float(tree_ifs), float(tree_loops), int(sub_number), int(data_ref), int(func_decl)]
+    else:
+
+        stats = [int(userID), int(IDsub), float(tree_height), float(tree_width), float(tree_size), float(tree_level), float(tree_degree),
+                 float(tree_ifs), float(tree_loops), int(sub_number), int(data_ref), int(func_decl)]
+
+
+    return stats
+
+def create_student_csv_var_submission(origin, destiny):
+
+    f = open(destiny, "w", newline='\n')
+    header_row = ['student', 'tree_height', "tree_width", "tree_size", "tree_level", "tree_degree", "conditionals",
+                  "loops", "submissions", "data_ref", "func_declarations"]
+    last_atv_folder = ""
+
+    with f:
+        writer = csv.writer(f)
+        writer.writerow(header_row)
+
+        student_submission_dic = dict()
+
+        for root, dirs, files in os.walk(origin):
+            submission_counter = dict()
+            atv_folder = str(root).split("/")
+            atv_folder = atv_folder[5].split("\\")
+            atv_folder = str(atv_folder[0])
+            if last_atv_folder != atv_folder:
+                student_submission_dic[atv_folder] = dict()
+                last_atv_folder = atv_folder
+
+            for name in files:
+                current_user = name.split("_")
+                submission_counter[current_user[0]] = submission_counter.get(current_user[0], 0) + 1
+                student_submission_dic[atv_folder][current_user[0]] = []
+
+
+            for name in files:
+                read_file = os.path.join(root, name)
+                current_user = name.split("_")
+                try:
+                    student_tree = create_graph(read_file)
+                    student_stats = tree_stats(student_tree, current_user[0], submission_counter[current_user[0]])
+
+                    student_submission_dic[atv_folder][current_user[0]].append(student_stats)
+
+                except Exception:
+                    pass
+                    # traceback.print_exc()
+
+        for atv_folder in student_submission_dic.keys():
+
+            writer.writerow([atv_folder])
+            writer.writerow("")
+            for user in student_submission_dic[atv_folder].keys():
+                if len(numpy.array(student_submission_dic[atv_folder][user])) > 0:
+                    row = numpy.var(numpy.array(student_submission_dic[atv_folder][user]), axis=0)
+                    row = numpy.around(row, decimals=7)
+                    writer.writerow(row)
+
+            writer.writerow("")
+
+
+def create_student_csv(origin, destiny):
+    student_tree = ''
+    student_stats = ''
+    path = "D:/Facul/Mestrado/Tree/splitXml/"
+    f = open(destiny, "w", newline='\n')
+    header_row = ['student', 'tree_height', "tree_width", "tree_size", "tree_level", "tree_degree", "conditionals",
+                  "loops", "submissions", "data_ref", "func_declarations"]
+    last_atv_folder = ""
+    with f:
+        writer = csv.writer(f)
+        writer.writerow(header_row)
+
+        last_user = ''
+        for root, dirs, files in os.walk(origin):
+            user_dic = dict()
+            atv_folder = str(root).split("/")
+            atv_folder = atv_folder[5].split("\\")
+            atv_folder = [str(atv_folder[0])]
+            if last_atv_folder != atv_folder:
+                writer.writerow("")
+                writer.writerow(atv_folder)
+                writer.writerow("")
+                last_atv_folder = atv_folder
+            # print("pasta da atividade"+root.split('/')[-1])
+            for name in files:
+                current_user = name.split("_")
+                user_dic[current_user[0]] = user_dic.get(current_user[0], 0) + 1
+
+            for name in sorted(files):
+                read_file = os.path.join(root, name)
+                current_user = name.split("_")
+
+                if current_user[0] != last_user:
+                    userID = current_user[0]
+                    IDsub = current_user[1].split(".c")
+                    # recebe a arvore AST do arquivo passado
+                    try:
+                        student_tree = create_graph(read_file)
+                        # gera os stats do aluno baseado no arquivo AST
+                        student_stats = tree_stats(student_tree, userID, user_dic[current_user[0]])
+                        if student_tree.depth() >= 2:
+                            last_user = current_user[0]
+                            writer.writerow(student_stats)
+
+
+                    except Exception:
+                        pass
+                        #traceback.print_exc()
+
+
+def create_student_csv_last_submission(origin, destiny):
+    student_tree = ''
+    student_stats = ''
+
+    f = open(destiny, "w", newline='\n')
+    header_row = ['student', 'tree_height', "tree_width", "tree_size", "tree_level", "tree_degree", "conditionals",
+                  "loops", "submissions", "data_ref", "func_declarations"]
+    last_atv_folder = ""
+    with f:
+        writer = csv.writer(f)
+        writer.writerow(header_row)
+
+        last_user = ''
+        for root, dirs, files in os.walk(origin):
+            user_dic = dict()
+            atv_folder = str(root).split("/")
+            atv_folder = atv_folder[5].split("\\")
+            atv_folder = [str(atv_folder[0])]
+            if last_atv_folder != atv_folder:
+                writer.writerow("")
+                writer.writerow(atv_folder)
+                writer.writerow("")
+                last_atv_folder = atv_folder
+
+            for name in files:
+                current_user = name.split("_")
+                user_dic[current_user[0]] = user_dic.get(current_user[0], 0) + 1
+
+            for name in sorted(files, reverse=True):
+                read_file = os.path.join(root, name)
+                current_user = name.split("_")
+
+                if current_user[0] != last_user:
+                    userID = current_user[0]
+                    IDsub = current_user[1].split(".c")
+                    # recebe a arvore AST do arquivo passado
+                    try:
+                        student_tree = create_graph(read_file)
+                        # gera os stats do aluno baseado no arquivo AST
+                        student_stats = tree_stats(student_tree, userID, user_dic[current_user[0]])
+                        if student_tree.depth() >= 2:
+                            last_user = current_user[0]
+                            writer.writerow(student_stats)
+
+
+                    except Exception:
+                        pass
+                        #traceback.print_exc()
+
+
+def create_student_csv_average_submission(origin, destiny):
+    student_tree = ''
+    student_stats = ''
+    # flag para fazer a media dos stats pelo o numero de submissoes do aluno ex SUM(tree_height)/flag = avg_tree_height
+    sub_number_counter = 0
+
+    f = open(destiny, "w", newline='\n')
+    header_row = ['student', 'tree_height', "tree_width", "tree_size", "tree_level", "tree_degree", "conditionals",
+                  "loops", "submissions", "data_ref", "func_declarations"]
+    last_atv_folder = ""
+
+    with f:
+        writer = csv.writer(f)
+        writer.writerow(header_row)
+
+        student_submission_dic = dict()
+
+        last_user = ''
+        for root, dirs, files in os.walk(origin):
+            submission_counter = dict()
+            atv_folder = str(root).split("/")
+            atv_folder = atv_folder[5].split("\\")
+            atv_folder = str(atv_folder[0])
+            if last_atv_folder != atv_folder:
+                student_submission_dic[atv_folder] = dict()
+                last_atv_folder = atv_folder
+
+            for name in files:
+                current_user = name.split("_")
+                submission_counter[current_user[0]] = submission_counter.get(current_user[0], 0) + 1
+                student_submission_dic[atv_folder][current_user[0]] = []
+
+
+            for name in files:
+                read_file = os.path.join(root, name)
+                current_user = name.split("_")
+                # codigo novo que usa numpy.avg
+                try:
+                    student_tree = create_graph(read_file)
+                    student_stats = tree_stats(student_tree, current_user[0], submission_counter[current_user[0]])
+
+                    student_submission_dic[atv_folder][current_user[0]].append(student_stats)
+
+                except Exception:
+                    pass
+                    # traceback.print_exc()
+
+
+        for atv_folder in student_submission_dic.keys():
+
+            writer.writerow([atv_folder])
+            writer.writerow("")
+            for user in student_submission_dic[atv_folder].keys():
+                if len(numpy.array(student_submission_dic[atv_folder][user])) > 0:
+                    row = numpy.average(numpy.array(student_submission_dic[atv_folder][user]), axis=0)
+                    writer.writerow(row)
+
+            writer.writerow("")
+
+
+def create_student_csv_three_averages_submission(origin, destiny):
+    student_tree = ''
+    student_stats = ''
+    # flag para fazer a media dos stats pelo o numero de submissoes do aluno ex SUM(tree_height)/flag = avg_tree_height
+    sub_number_counter = 0
+
+    f = open(destiny, "w", newline='\n')
+    header_row = ['student', 'tree_height', "tree_width", "tree_size", "tree_level", "tree_degree", "conditionals",
+                  "loops", "submissions", "data_ref", "func_declarations"]
+    last_atv_folder = ""
+
+    with f:
+        writer = csv.writer(f)
+        writer.writerow(header_row)
+
+        student_submission_dic = dict()
+
+        last_user = ''
+        for root, dirs, files in os.walk(origin):
+            submission_counter = dict()
+            atv_folder = str(root).split("/")
+            atv_folder = atv_folder[6].split("\\")
+            atv_folder = str(atv_folder[0])
+            if last_atv_folder != atv_folder:
+                #writer.writerow("")
+                #writer.writerow(atv_folder)
+                student_submission_dic[atv_folder] = dict()
+                #writer.writerow("")
+                last_atv_folder = atv_folder
+
+            for name in files:
+                current_user = name.split("_")
+                submission_counter[current_user[0]] = submission_counter.get(current_user[0], 0) + 1
+                student_submission_dic[atv_folder][current_user[0]] = []
+
+
+            #print(student_submission_dic.keys())
+
+
+            for name in files:
+                read_file = os.path.join(root, name)
+                current_user = name.split("_")
+                # codigo novo que usa numpy.avg
+                try:
+                    student_tree = create_graph(read_file)
+                    student_stats = tree_stats(student_tree, current_user[0], submission_counter[current_user[0]])
+
+                    student_submission_dic[atv_folder][current_user[0]].append(student_stats)
+
+                except Exception:
+                    pass
+                    # traceback.print_exc()
+
+
+        for atv_folder in student_submission_dic.keys():
+
+            writer.writerow([atv_folder])
+            writer.writerow("")
+            for user in student_submission_dic[atv_folder].keys():
+                if len(numpy.array(student_submission_dic[atv_folder][user])) > 0:
+                    row = numpy.average(numpy.array(student_submission_dic[atv_folder][user]), axis=0)
+                    writer.writerow(row)
+
+            writer.writerow("")
+
+
+origin = ".../moodle/"
+destiny = ".../studentData_last_moodle.csv"
+#create_student_csv_last_submission(origin, destiny)
+#create_student_csv(origin, ".../studentData_first_moodle.csv")
+#create_student_csv_average_submission(origin, ".../studentData_average_moodle.csv")
+#create_student_csv_var_submission(origin, ".../studentData_variance_moodle.csv")
+
+origin1o = ".../moodle_divided/1/"
+origin2o = ".../moodle_divided/2/"
+origin3o = ".../moodle_divided/3/"
+
+origin_teste = "mypath\"
+
+create_student_csv_three_averages_submission(origin_teste, "...\file.csv")
