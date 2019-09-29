@@ -1,10 +1,11 @@
 # Masters
 
-<h2>This repository contains the codes in Python 3.6.5 and R languages related to development of my masters' project.</h2>
+**This repository contains the codes in Python 3.6.5 and R languages related to development of my masters' project.**
 
 
-The project consists in an data-driven evaluation of the problem solving strategy, tinkering, employed by undergraduate students in an introductory university course. 
-Using Educational Data Mining this project aims to identify different students' tinkering levels and to assess how these strategies impact in the students' final marks.
+The project consists in an data-driven evaluation of the problem solving strategy, tinkering, employed by undergraduate students in an introductory university course. Using Educational Data Mining this project aims to identify different students' tinkering levels and to assess how these strategies impact in the students' final marks.
+
+
 
 The folders in this repository have the following content:
 
@@ -16,7 +17,7 @@ The folders in this repository have the following content:
   1. [Preprocess](https://github.com/fcarvalhos/masters/tree/master/Clustering/preprocess) contains the scripts used to preprocess the data before the clustering steps
 
 
-
+This project was developed in the university of Sao Paulo - ICMC, in the CaeD lab under the Seiji Isontanis' advisory, and financed by the funding agency CAPES.
 
 
 
