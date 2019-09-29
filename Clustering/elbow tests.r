@@ -1,3 +1,8 @@
+clusters_data_file_header = c("features", "NFeatures", "pbm", "Silhuette")
+final_file = read.csv("mypath\\final_file.csv", header = TRUE, sep = ",")
+header_df = c("difNLOC","submissions","Window","Total.Time.Spent")
+#colnames(final_file)
+#generate all test for K=1...4 based on the elbow tests previously done
 
 for(cl in 2:6){
   
