@@ -1,0 +1,189 @@
+import traceback
+import datetime
+from datetime import timedelta
+import dateutil.parser
+import os
+import bs4
+import requests
+import gc
+
+
+
+class submission(object):
+    pass
+
+class moodle_pages_crawler():
+    def __init__(self, username, password, path, links = None):
+        if links is None:
+            session = self.login(username, password)
+            links = self.get_submission_links(session)
+        session = self.login(username, password)
+        #self.get_codes(links, session, path)
+        self.donwload_pages(links, session, path)
+
+
+    def login(self, username, password):
+        # loga no site moodle usando o username e senha passados por parametro
+        payload = {'username': username, "password": password}
+        session_requests = requests.session()
+        #session_requests = request.setRawHeader( "User-Agent" , "Mozilla Firefox" )
+        login_url = "http://moodle.caed-lab.com/login/index.php"
+        agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'
+
+        result = session_requests.post(
+            login_url,
+            data=payload,
+            headers={'referer':login_url,'user-agent':agent, 'accept':'text/html'}
+        )
+
+        return session_requests
+
+    def get_submission_links(self, session_requests):
+
+
+        #realizar o crawler no site pegando os links relativos as atividades atv_id
+        submission_links = []
+        atv_id = [493, 496, 497, 504, 498, 515, 454, 457, 520, 522, 528, 524, 478, 534, 538, 542, 544, 545]
+        url_base = "http://moodle.caed-lab.com/mod/vpl/code_logging.php?id=%(id_url_atv)s"
+
+
+        # para cada item em atv_id eh realizado um request e salvo o padrao html parseado em listSoup
+
+        for i in atv_id:
+            d = {"id_url_atv": str(i)}
+            listR  = session_requests.get(url_base % d, headers={'User-Agent': "Magic Browser"})
+            listSoup = bs4.BeautifulSoup(listR.text, "html.parser")
+            tds = listSoup.findAll('td', {'class': 'cell c2 lastcol'})
+            #td[i].content[0]['href'] pega o primeiro conteudo da classe cell c4 que contenha href
+            #cell C4 contem o link previous submissions
+
+            #range vai de 1 a length pq o 1o elemento cell c2 lastcol n eh um link
+            for student in range(0, len(tds)):
+                #print(tds[student].contents[0]['href'])
+                submission_links.append(tds[student].contents[0]['href'])
+
+
+        return submission_links
+
+
+    def donwload_pages(self, submission_links, session_request, path_save):
+        for link in submission_links:
+            page = session_request.get(link, headers={'User-Agent': "Magic Browser"})
+            page_content = page.text
+
+
+            student_id = link.split('&userid=')[1]
+            # student_id = download_link.split('userid=')[1].split("&submissionid")[0]
+            # recebe o submission id
+
+            # recebe o id da atividade
+            # atv_id = download_link.split('?id=')[1].split("&userid")[0]
+            atv_id = link.split('&userid=')[0].split("&id=")[1]
+
+            # cria as pastas de atividade e dos alunos caso ainda nao tenham sido criadas
+            new_folder = path_save + str(atv_id)
+            if (not os.path.exists(new_folder)):
+                os.makedirs(new_folder)
+            new_folder = path_save + str(atv_id) + "\\" + str(student_id)
+            if (not os.path.exists(new_folder)):
+                os.makedirs(new_folder)
+
+            filename = open(new_folder+".html", "w", encoding= "utf-8")
+            filename.write(page_content)
+            filename.close()
+
+
+class moodle_times():
+    def __init__(self, origin, destiny):
+        self.get_codes(origin, destiny)
+
+
+
+    def get_codes(self, origin, destiny):
+        for root, dirs, files in os.walk(origin):
+            for name in files:
+                path = os.path.join(root, name)
+                atv_id = path.split("moodle_pages\\")[1].split("\\")[0]
+
+                std_id = name.split(".html")[0]
+                #print("file: "+str(std_id)+" atv_id: "+str(atv_id))
+
+                total_time_spent = timedelta(0)
+                time_window = 0
+                timeStamps = []
+
+                page = open(path, encoding="utf8")
+                listSoup = bs4.BeautifulSoup(page.read(), "html.parser")
+                tds = listSoup.findAll('td', {'class': 'cell c0'})
+
+                for i in range(0, len(tds)):
+                    stamps_raw = bs4.BeautifulSoup(str(tds[i].contents), "html.parser")
+                    stamps_cut = stamps_raw.text.split("[")
+                    stamps_cut = stamps_cut[1].split("]")
+                    stamps = stamps_cut[0]
+
+                    try:
+                        timeStamps.append(dateutil.parser.parse(stamps))
+                    except:
+                        traceback.print_exc()
+
+                #timeStamps = list(set(timeStamps))
+                timeStamps = sorted(timeStamps)
+
+
+                if len(tds) < 2:
+                    time_window = timedelta(0)
+                    total_time_spent = timedelta(0)
+                    page.close()
+                else:
+                    try:
+                        time_window = timeStamps[-1] - timeStamps[0]
+                        session_start = timeStamps[0]
+                        #esse laço busca o final da seção (timedelta<=1hr) e quando o encontra calcula a diferenca entre o final e o inicio
+                        #da seçao o final e o comeco viram o atual e repete o processo de buscar o proximo fim de secao
+                        for i in range(1, len(timeStamps)):
+
+                            if (timeStamps[i] - timeStamps[i - 1]) <= timedelta(hours=1):
+                                session_end = timeStamps[i]
+                            else:
+                                #recebe o valor da diferença da seção
+                                total_time_spent += session_end - session_start
+                                #muda o inicio da secao para o novo time stamp
+                                session_start = timeStamps[i]
+                                session_end = session_start
+
+                        # adiciona o valor da ultima sessao no tts
+                        total_time_spent += session_end - session_start
+
+                        # cria as pastas de atividade e dos alunos caso ainda nao tenham sido criadas
+                        new_folder = destiny + str(atv_id)
+                        if (not os.path.exists(new_folder)):
+                            os.makedirs(new_folder)
+                        new_folder = destiny + str(atv_id) + "\\" + str(std_id)
+                        if (not os.path.exists(new_folder)):
+                            os.makedirs(new_folder)
+                    except:
+                        traceback.print_exc()
+                        time_window = timedelta(0)
+                        total_time_spent = timedelta(0)
+                        page.close()
+
+
+                master_file_name = destiny + "/All_subs_times.txt"
+                master_file = open(master_file_name, "a+")
+                master_file.write(
+                    str(atv_id) + "," + str(std_id) + "," + str(time_window.total_seconds()) + "," + str(total_time_spent.total_seconds()) + "\n")
+                master_file.close()
+                page.close()
+                gc.collect()
+
+
+
+
+origin =  ""  #origin of local moodle pages
+destiny = "" #destiny path
+
+my_c = moodle_times(origin, destiny)
+
+
+
